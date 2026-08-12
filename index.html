@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Baldwin Rotational Fuzzy Supplier Selection</title>
+<style>
+  :root{
+    --paper:#F7F8F5; --ink:#1C2B3A; --rule:#D8DEDD; --card:#FFFFFF;
+    --pos:#0E7C66; --neg:#B4532A; --fmu:#12406E; --soft:#5C6B77;
+    --chip:#EEF1EC;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);
+       font:15px/1.55 "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif}
+  header{border-bottom:3px double var(--ink);padding:22px 28px 16px;background:var(--card)}
+  header h1{margin:0;font-size:26px;font-weight:600;letter-spacing:.2px}
+  header p{margin:6px 0 0;color:var(--soft);font-size:14px;max-width:70ch}
+  main{display:grid;grid-template-columns:minmax(340px,1fr) minmax(360px,460px);gap:24px;
+       padding:24px 28px;max-width:1240px;margin:0 auto}
+  @media(max-width:900px){main{grid-template-columns:1fr}}
+  h2{font-size:15px;text-transform:uppercase;letter-spacing:.12em;font-weight:600;
+     border-bottom:1px solid var(--rule);padding-bottom:6px;margin:0 0 12px}
+  .card{background:var(--card);border:1px solid var(--rule);border-radius:6px;
+        padding:16px;margin-bottom:16px}
+  .factor{border-left:4px solid var(--fmu)}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}
+  .row input[type=text]{flex:1;min-width:120px}
+  input[type=text],select{font:13px/1.4 ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+        padding:5px 7px;border:1px solid var(--rule);border-radius:4px;background:#FCFCFA;color:var(--ink)}
+  select:focus,input:focus,button:focus-visible{outline:2px solid var(--fmu);outline-offset:1px}
+  button{font:13px ui-monospace,"SF Mono",Menlo,Consolas,monospace;padding:6px 10px;
+         border:1px solid var(--ink);border-radius:4px;background:var(--card);
+         color:var(--ink);cursor:pointer}
+  button:hover{background:var(--chip)}
+  button.primary{background:var(--ink);color:#fff}
+  button.ghost{border-color:var(--rule);color:var(--soft)}
+  .sub{margin:8px 0 4px 16px;padding-left:12px;border-left:2px solid var(--rule)}
+  .subsub{margin-left:16px}
+  .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--soft)}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+  /* results */
+  #chartwrap{position:sticky;top:16px}
+  svg{width:100%;height:auto;display:block}
+  table{border-collapse:collapse;width:100%;font:13px ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+  th,td{border-bottom:1px solid var(--rule);padding:5px 8px;text-align:left}
+  th{font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--soft)}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  tr.win td{background:#EAF3EE;font-weight:600}
+  .verdict{font-size:19px;margin:10px 0 4px}
+  .verdict b{border-bottom:3px solid var(--pos)}
+  .note{font-size:12.5px;color:var(--soft)}
+  details{margin-top:12px}
+  summary{cursor:pointer;font-size:13px}
+  .ok{color:var(--pos)} .bad{color:var(--neg)}
+  footer{padding:18px 28px;color:var(--soft);font-size:12.5px;border-top:1px solid var(--rule)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Baldwin Rotational Fuzzy Supplier Selection</h1>
+  <p>Multi-attribute supplier rating from linguistic judgments, using Baldwin's rotational
+     fuzzy set model. Implementation of Al-Humaidi's MADM method; ratings and importance
+     weights are combined pointwise on the unit grid, aggregated by fuzzy weighted average,
+     and rated by shortest centroid distance.</p>
+</header>
+<main>
+  <section>
+    <h2>Supplier assessment &mdash; fixed factor hierarchy</h2>
+    <p class="note" style="margin:0 0 10px">The five factors and their sub-factors and
+    sub-sub factors are fixed, as in the original program. Set the importance weight and
+    rating in each dropdown; a factor weighted Not Important is excluded and its branch
+    is greyed out.</p>
+    <div class="toolbar">
+      <button class="primary" id="btnCompute">Compute rating</button>
+      <button id="btnReset">Reset all selections</button>
+      <button id="btnSens">Run &plusmn;1-term sensitivity</button>
+      <button class="ghost" id="btnValidate">Show validation vs. published tables</button>
+    </div>
+    <div id="factors"></div>
+    <div class="card" id="sensCard" style="display:none">
+      <h2>Sensitivity</h2>
+      <div id="sensOut" class="note"></div>
+    </div>
+    <div class="card" id="valCard" style="display:none">
+      <h2>Validation against the published case study</h2>
+      <div id="valOut"></div>
+    </div>
+  </section>
+
+  <aside id="chartwrap">
+    <div class="card">
+      <h2>Rotational model</h2>
+      <div id="chart"></div>
+      <div class="verdict" id="verdict">Enter assessments and compute.</div>
+      <div class="note" id="centroidOut"></div>
+      <table id="distTable" style="margin-top:8px"></table>
+      <details>
+        <summary>Centroid &amp; distance convention</summary>
+        <div class="note" style="margin-top:6px">
+          Centroid: C = (&Sigma;x&middot;y/&Sigma;y, &Sigma;x&middot;y/&Sigma;x), exactly as the
+          original Visual Basic program (Form17).<br>
+          <label><input type="radio" name="conv" value="original" checked>
+            Original program distance, &delta; = (&Delta;x)&sup2; + |&Delta;y| &mdash; reproduces the
+            published case-study table exactly (0.197, 0.228, &hellip;).</label><br>
+          <label><input type="radio" name="conv" value="euclid">
+            Corrected Euclidean distance (Eq. 12 as written) &mdash; recommended for the revised
+            paper; the ranking is unchanged.</label>
+        </div>
+      </details>
+    </div>
+  </aside>
+</main>
+<footer>
+  Open implementation for the data availability statement &mdash; MIT license.
+  Faithful port of the original Visual Basic program (Sustainability Indicator solution,
+  Forms 1&ndash;20): identical membership functions, weighted-average aggregation, centroid,
+  and both the original and the corrected distance conventions.
+  Rating terms: Very/&mdash;/Fairly Positive, Undecided, Fairly/&mdash;/Very Negative.
+  Weight terms: Very Important, Important, Fairly Important, Not Important
+  (Very Important &equiv; Very Positive &equiv; y = x&sup2;, etc.).
+  &ldquo;Undecided&rdquo; is modeled as the constant membership y = 0.5; zero total weight
+  yields a zero rating (the VB divide-by-10&#8315;&#185;&#8308; guard is replaced by an exact zero).
+</footer>
+
+<script>
+"use strict";
+/* ---------------- engine ---------------- */
+const X = Array.from({length:11},(_,i)=>i/10);
+const RATE = {
+  "Very Positive":   X.map(v=>v*v),
+  "Positive":        X.slice(),
+  "Fairly Positive": X.map(Math.sqrt),
+  "Undecided":       X.map(()=>0.5),
+  "Fairly Negative": X.map(v=>Math.sqrt(1-v)),
+  "Negative":        X.map(v=>1-v),
+  "Very Negative":   X.map(v=>(1-v)*(1-v)),
+};
+const WEIGHT = {
+  "Very Important":   X.map(v=>v*v),
+  "Important":        X.slice(),
+  "Fairly Important": X.map(Math.sqrt),
+  "Not Important":    X.map(()=>0),
+};
+const RATE_ORDER = ["Very Negative","Negative","Fairly Negative","Undecided",
+                    "Fairly Positive","Positive","Very Positive"];
+const BALDWIN_C = {
+  "Very Positive":[0.75,0.30], "Positive":[2/3,1/3], "Fairly Positive":[0.60,0.375],
+  "Fairly Negative":[0.40,0.375], "Negative":[1/3,1/3], "Very Negative":[0.25,0.30],
+};
+const wavg = pairs => X.map((_,i)=>{
+  let n=0,d=0; for(const [w,r] of pairs){ n+=w[i]*r[i]; d+=w[i]; }
+  return d>0? n/d : 0;
+});
+/* Centroid exactly as the original Visual Basic program (Form17):
+     centroidx = sum(x*y)/sum(y) ; centroidy = sum(x*y)/sum(x)            */
+const centProgram = y=>{
+  let sxy=0,sy=0,sx=0; y.forEach((v,i)=>{sxy+=X[i]*v; sy+=v; sx+=X[i];});
+  return [sxy/sy, sxy/sx];
+};
+/* Distance: the original VB line
+     d = ((cx-X)^2) + ((cy-Y)^2)^0.5
+   binds ^ before +, so it computes (dx)^2 + |dy|, not the Euclidean
+   distance of the paper's Eq. 12. "original" reproduces the published
+   tables exactly; "euclid" is the corrected Eq. 12 (same ranking).     */
+const distances = (c,mode) => Object.fromEntries(Object.entries(BALDWIN_C)
+  .map(([t,[rx,ry]])=>[t, mode==="original"
+      ? (c[0]-rx)*(c[0]-rx) + Math.abs(c[1]-ry)
+      : Math.hypot(c[0]-rx, c[1]-ry)]));
+
+/* ---------------- state ---------------- */
+/* Fixed supplier-selection hierarchy (paper Fig. 5 classification / Table 1A).
+   The structure is not editable; end users set only ratings and weights. */
+const HIERARCHY = [
+ ["Performance", [
+   ["Delivery", ["Order Lead Time","Geographic Location"]],
+   ["Flexibility (Ability to Respond to Customer Request and Changes)", []],
+   ["Service, After Sale and Communication", ["Repair and After Sale Service","Warranty Period",
+     "Reversal Logistics","Training Aids","Electronic Data Interchange","Technical Support",
+     "After Sale Communication System"]],
+ ]],
+ ["Cost", [
+   ["Initial Cost", ["Direct Cost of Product","Indirect Cost (Transportation and Taxes Cost)"]],
+   ["Maintenance Cost", []],
+   ["Recovery Cost", []],
+ ]],
+ ["Assurance of Supply", [
+   ["Inventory Availability", []],
+   ["Ability to Customization", []],
+   ["Shipment Time Accuracy", []],
+   ["Shipment Quality Accuracy", []],
+ ]],
+ ["Technical Capability", [
+   ["Manufacturing", ["Material Handling Equipment","Plant Layout","Storage Quality",
+     "Environmental Friendly Product","Product Safety"]],
+   ["Company Background", ["Company Reputation","Employees Quality (Education and Training)",
+     "Financial Strength (Solvency, Profitability and Liquidity)"]],
+   ["Design", ["Design Innovation","Ease of Design and Ability to Fix"]],
+   ["Supplier's Availability of Resources", []],
+   ["Company Past Record on Technology", []],
+ ]],
+ ["Quality", [
+   ["Quality Assurance During Production", ["Statistical Process Control","Corrective Action Response",
+     "Continuous Process Improvement","Customer Reference"]],
+   ["Inspection and Reliability Tests", ["Measuring and Testing Equipment",
+     "No. of Reliability Tests During Production","No. of Process Inspections","Final Process Test"]],
+   ["Quality Staff", ["No. of Quality Staff","Education of Quality Staff","Training of Quality Staff"]],
+   ["Management Commitment", ["Quality Assurance System","Internal Audits","Contract Compliance"]],
+ ]],
+];
+function buildModel(){
+  return { factors: HIERARCHY.map(([fn,subs])=>({
+    name:fn, weight:"Very Important", rating:"Positive",
+    subs: subs.map(([sn,sss])=>({
+      name:sn, weight:"Important", rating:"Positive",
+      subsubs: sss.map(n=>({name:n, weight:"Important", rating:"Positive"}))
+    }))
+  })) };
+}
+let model = buildModel();
+
+/* ---------------- evaluation ---------------- */
+function evalSub(s){
+  if(s.subsubs.length===0) return RATE[s.rating];
+  return wavg(s.subsubs.map(ss=>[WEIGHT[ss.weight], RATE[ss.rating]]));
+}
+function evalFactor(f){
+  if(f.subs.length===0) return RATE[f.rating];
+  return wavg(f.subs.map(s=>[WEIGHT[s.weight], evalSub(s)]));
+}
+function evalModel(m){
+  return wavg(m.factors.map(f=>[WEIGHT[f.weight], evalFactor(f)]));
+}
+function rate(m){
+  const fmu = evalModel(m);
+  const conv = document.querySelector('input[name=conv]:checked').value;
+  const c = centProgram(fmu);
+  const d = distances(c, conv);
+  const verdict = Object.keys(d).reduce((a,b)=>d[a]<d[b]?a:b);
+  return {fmu,c,d,verdict};
+}
+
+/* ---------------- UI: hierarchy ---------------- */
+const factorsEl = document.getElementById("factors");
+function sel(options, value, onchange, aria, disabled){
+  const s=document.createElement("select"); s.setAttribute("aria-label",aria);
+  for(const o of options){ const op=document.createElement("option");
+    op.textContent=o; op.value=o; if(o===value) op.selected=true; s.appendChild(op); }
+  if(disabled) s.disabled=true;
+  s.addEventListener("change",()=>{onchange(s.value);});
+  return s;
+}
+function btn(label,onclick,cls){ const b=document.createElement("button");
+  b.textContent=label; if(cls)b.className=cls; b.addEventListener("click",onclick); return b; }
+
+function render(){
+  factorsEl.innerHTML="";
+  model.factors.forEach(f=>{
+    const card=document.createElement("div"); card.className="card factor";
+    const off=f.weight==="Not Important";
+    const r1=document.createElement("div"); r1.className="row";
+    const nm=document.createElement("strong"); nm.textContent=f.name; nm.style.flex="1"; r1.append(nm);
+    r1.append(labeled("weight", sel(Object.keys(WEIGHT),f.weight,v=>{f.weight=v;render();},f.name+" weight")));
+    if(f.subs.length===0)
+      r1.append(labeled("rating", sel(Object.keys(RATE),f.rating,v=>f.rating=v,f.name+" rating",off)));
+    card.append(r1);
+    f.subs.forEach(s=>{
+      const sd=document.createElement("div"); sd.className="sub";
+      const soff=off||s.weight==="Not Important";
+      if(off) sd.style.opacity=".45";
+      const r2=document.createElement("div"); r2.className="row";
+      const sn=document.createElement("span"); sn.textContent=s.name; sn.style.flex="1"; r2.append(sn);
+      r2.append(labeled("weight", sel(Object.keys(WEIGHT),s.weight,v=>{s.weight=v;render();},s.name+" weight",off)));
+      if(s.subsubs.length===0)
+        r2.append(labeled("rating", sel(Object.keys(RATE),s.rating,v=>s.rating=v,s.name+" rating",soff)));
+      sd.append(r2);
+      s.subsubs.forEach(ss=>{
+        const r3=document.createElement("div"); r3.className="row subsub";
+        if(soff) r3.style.opacity=".45";
+        const ssn=document.createElement("span"); ssn.textContent=ss.name; ssn.style.flex="1";
+        ssn.style.fontSize="13px"; r3.append(ssn);
+        r3.append(labeled("weight", sel(Object.keys(WEIGHT),ss.weight,v=>ss.weight=v,ss.name+" weight",soff)));
+        r3.append(labeled("rating", sel(Object.keys(RATE),ss.rating,v=>ss.rating=v,ss.name+" rating",soff)));
+        sd.append(r3);
+      });
+      card.append(sd);
+    });
+    factorsEl.append(card);
+  });
+}
+function labeled(l,el){ const w=document.createElement("span");
+  const s=document.createElement("span"); s.className="lbl"; s.textContent=l+" ";
+  w.append(s,el); return w; }
+
+/* ---------------- UI: results ---------------- */
+function drawChart(fmu,c){
+  const W=420,H=420,P=34, sx=v=>P+v*(W-2*P), sy=v=>H-P-v*(H-2*P);
+  const path=y=>y.map((v,i)=>(i?"L":"M")+sx(X[i]).toFixed(1)+" "+sy(v).toFixed(1)).join(" ");
+  let g=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Baldwin curves with F-mu and centroid">`;
+  g+=`<rect x="${P}" y="${P}" width="${W-2*P}" height="${H-2*P}" fill="#FCFCFA" stroke="#D8DEDD"/>`;
+  for(let i=1;i<10;i++){ g+=`<line x1="${sx(i/10)}" y1="${sy(0)}" x2="${sx(i/10)}" y2="${sy(1)}" stroke="#EEF0ED"/>`;
+                          g+=`<line x1="${sx(0)}" y1="${sy(i/10)}" x2="${sx(1)}" y2="${sy(i/10)}" stroke="#EEF0ED"/>`; }
+  const col=t=>t.includes("Negative")?"#C89A82":"#8FB8AD";
+  for(const [t,y] of Object.entries(RATE)){ if(t==="Undecided") continue;
+    g+=`<path d="${path(y)}" fill="none" stroke="${col(t)}" stroke-width="1.4"/>`; }
+  if(fmu){ g+=`<path d="${path(fmu)}" fill="none" stroke="#12406E" stroke-width="3"/>`;
+    g+=`<line x1="${sx(c[0])-7}" y1="${sy(c[1])}" x2="${sx(c[0])+7}" y2="${sy(c[1])}" stroke="#1C2B3A" stroke-width="2"/>`;
+    g+=`<line x1="${sx(c[0])}" y1="${sy(c[1])-7}" x2="${sx(c[0])}" y2="${sy(c[1])+7}" stroke="#1C2B3A" stroke-width="2"/>`;
+    g+=`<circle cx="${sx(c[0])}" cy="${sy(c[1])}" r="4.5" fill="none" stroke="#1C2B3A" stroke-width="1.5"/>`; }
+  for(const [t,[rx,ry]] of Object.entries(BALDWIN_C))
+    g+=`<circle cx="${sx(rx)}" cy="${sy(ry)}" r="3" fill="${t.includes("Negative")?"#B4532A":"#0E7C66"}"/>`;
+  g+=`<text x="${sx(0.5)}" y="${H-8}" text-anchor="middle" font-size="11" fill="#5C6B77">x</text>`;
+  g+=`<text x="12" y="${sy(0.5)}" font-size="11" fill="#5C6B77">&#956;</text></svg>`;
+  document.getElementById("chart").innerHTML=g;
+}
+function showResult(res){
+  drawChart(res.fmu,res.c);
+  document.getElementById("verdict").innerHTML=
+    `Supplier rating: <b>${res.verdict}</b>`;
+  document.getElementById("centroidOut").textContent=
+    `Centroid C = (${res.c[0].toFixed(3)}, ${res.c[1].toFixed(3)})`;
+  const rows=Object.entries(res.d).sort((a,b)=>a[1]-b[1]);
+  document.getElementById("distTable").innerHTML=
+    "<tr><th>Baldwin function</th><th>&delta; to centroid</th></tr>"+
+    rows.map(([t,v],i)=>`<tr class="${i===0?"win":""}"><td>${t}</td><td class="num">${v.toFixed(3)}</td></tr>`).join("");
+}
+
+/* ---------------- sensitivity ---------------- */
+function leaves(m){
+  const out=[];
+  m.factors.forEach(f=>{
+    if(f.subs.length===0){ out.push(f); return; }
+    f.subs.forEach(s=>{
+      if(s.subsubs.length===0){ out.push(s); return; }
+      s.subsubs.forEach(ss=>out.push(ss));
+    });
+  });
+  return out;
+}
+function sensitivity(){
+  const base=rate(model).verdict, L=leaves(model), flips=[];
+  for(const leaf of L){
+    const orig=leaf.rating, k=RATE_ORDER.indexOf(orig);
+    for(const nk of [k-1,k+1]){
+      if(nk<0||nk>=RATE_ORDER.length) continue;
+      leaf.rating=RATE_ORDER[nk];
+      const v=rate(model).verdict;
+      if(v!==base) flips.push(`${leaf.name}: ${orig} &rarr; ${RATE_ORDER[nk]} gives <b>${v}</b>`);
+      leaf.rating=orig;
+    }
+  }
+  const el=document.getElementById("sensOut");
+  document.getElementById("sensCard").style.display="block";
+  el.innerHTML = flips.length===0
+    ? `<span class="ok">Stable.</span> No single one-term change in any of the ${L.length} leaf ratings alters the verdict (${base}).`
+    : `${flips.length} of ${2*L.length} one-term perturbations change the verdict:<br>`+flips.join("<br>");
+}
+
+/* ---------------- validation vs published ---------------- */
+const RC_PUB=[
+ [0,.1094,.2175,.3192,.4134,.5,.5792,.6516,.7178,.7781,.8333],
+ [0,.255,.27,.295,.33,.375,.43,.495,.57,.655,.75],
+ [0,.0822,.1468,.2079,.2717,.3414,.4184,.5030,.5946,.6899,.75],
+ [0,.01,.04,.09,.16,.25,.36,.49,.64,.81,1],
+ [0,.0404,.0834,.1372,.2055,.2904,.3935,.5155,.6570,.8185,1]];
+const FMU_PUB=[0,.0994,.1515,.2099,.2761,.3514,.4362,.5310,.6359,.7503,.8667];
+const D_PUB={"Fairly Positive":.197,"Positive":.228,"Very Positive":.260,
+             "Fairly Negative":.282,"Negative":.370,"Very Negative":.474};
+function validate(){
+  const vi=WEIGHT["Very Important"];
+  const fmu=wavg(RC_PUB.map(v=>[vi,v]));
+  const c=centProgram(fmu), d=distances(c,"original");
+  const verdict=Object.keys(d).reduce((a,b)=>d[a]<d[b]?a:b);
+  let rows=FMU_PUB.map((p,i)=>{
+    const ok=Math.abs(fmu[i]-p)<5e-4;
+    return `<tr><td class="num">${X[i].toFixed(1)}</td><td class="num">${fmu[i].toFixed(4)}</td>`+
+           `<td class="num">${p.toFixed(4)}</td><td class="${ok?"ok":"bad"}">${ok?"OK":"differs"}</td></tr>`;
+  }).join("");
+  document.getElementById("valCard").style.display="block";
+  document.getElementById("valOut").innerHTML=
+    `<p class="note">Factor-rating vectors rc&#8321;&hellip;rc&#8325; and the all-Very-Important factor
+     weights of the published ETFE case are aggregated by this engine and compared with the
+     published F&#956; column.</p>
+     <table><tr><th>x</th><th>F&#956; computed</th><th>F&#956; published</th><th></th></tr>${rows}</table>
+     <p class="note">Centroid (program convention): (${c[0].toFixed(3)}, ${c[1].toFixed(3)}).
+     Published: (0.713, 0.599) &mdash; the x&#772; matches exactly; the published y&#772; is a
+     transcription typo for ${c[1].toFixed(3)}. Verdict: <b>${verdict}</b> &mdash; published:
+     Fairly Positive.</p>
+     <table><tr><th>Baldwin function</th><th>&delta; computed</th><th>&delta; published</th><th></th></tr>${
+       Object.entries(D_PUB).map(([t,p])=>{
+         const ok=Math.abs(d[t]-p)<5e-4;
+         return `<tr><td>${t}</td><td class=num>${d[t].toFixed(3)}</td><td class=num>${p.toFixed(3)}</td>`+
+                `<td class="${ok?"ok":"bad"}">${ok?"OK":"differs"}</td></tr>`;}).join("")
+     }</table>
+     <p class="note">All six published distances are reproduced exactly by the original program's
+     distance expression &delta; = (&Delta;x)&sup2; + |&Delta;y| (a Visual Basic operator-precedence
+     slip relative to Eq. 12). The corrected Euclidean Eq. 12 gives the same ranking.</p>`;
+  drawChart(fmu,c);
+  document.getElementById("verdict").innerHTML=`Supplier rating: <b>${verdict}</b> (validation case)`;
+  document.getElementById("centroidOut").textContent=`Centroid C = (${c[0].toFixed(3)}, ${c[1].toFixed(3)})`;
+  const rws=Object.entries(d).sort((a,b)=>a[1]-b[1]);
+  document.getElementById("distTable").innerHTML=
+    "<tr><th>Baldwin function</th><th>&delta; to centroid</th></tr>"+
+    rws.map(([t,v],i)=>`<tr class="${i===0?"win":""}"><td>${t}</td><td class="num">${v.toFixed(3)}</td></tr>`).join("");
+}
+
+/* ---------------- wire up ---------------- */
+document.getElementById("btnCompute").addEventListener("click",()=>showResult(rate(model)));
+document.getElementById("btnReset").addEventListener("click",()=>{model=buildModel();render();});
+document.getElementById("btnSens").addEventListener("click",sensitivity);
+document.getElementById("btnValidate").addEventListener("click",validate);
+document.querySelectorAll('input[name=conv]').forEach(r=>r.addEventListener("change",()=>showResult(rate(model))));
+render();
+drawChart(null,[0,0]);
+</script>
+</body>
+</html>
